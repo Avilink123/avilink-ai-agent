@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: avilink-postgres
+    environment:
+      POSTGRES_DB: avilink
+      POSTGRES_USER: avilink
+      POSTGRES_PASSWORD: avilink_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - avilink-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avilink -d avilink"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Avilink AI Agent Application
+  avilink-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avilink-app
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://avilink:avilink_password@postgres:5432/avilink
+      - NEXTAUTH_SECRET=your-nextauth-secret-here
+      - NEXTAUTH_URL=http://localhost:3000
+      # LLM API Keys (set these in your .env file)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Search API Keys
+      - SERP_API_KEY=${SERP_API_KEY}
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - avilink-network
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # Redis for caching (optional but recommended)
+  redis:
+    image: redis:7-alpine
+    container_name: avilink-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - avilink-network
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  avilink-network:
+    driver: bridge
