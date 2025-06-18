@@ -1,0 +1,178 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// User sessions and authentication
+model User {
+    id          String   @id @default(cuid())
+    sessionId   String   @unique
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    language    String   @default("en")
+    preferences Json?
+    
+    conversations Conversation[]
+    files         File[]
+    llmConfigs    LLMConfiguration[]
+    codeExecutions CodeExecution[]
+    
+    @@map("users")
+}
+
+// Chat conversations
+model Conversation {
+    id          String   @id @default(cuid())
+    title       String?
+    userId      String
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    isArchived  Boolean  @default(false)
+    metadata    Json?
+    
+    user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    messages Message[]
+    
+    @@map("conversations")
+}
+
+// Individual chat messages
+model Message {
+    id             String   @id @default(cuid())
+    conversationId String
+    role           String   // 'user', 'assistant', 'system', 'tool'
+    content        String
+    metadata       Json?    // For storing attachments, tool calls, etc.
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+    
+    conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+    
+    @@map("messages")
+}
+
+// File storage metadata
+model File {
+    id           String   @id @default(cuid())
+    userId       String
+    filename     String
+    originalName String
+    mimeType     String
+    size         Int
+    path         String   // Storage path
+    uploadedAt   DateTime @default(now())
+    processedAt  DateTime?
+    status       String   @default("uploaded") // uploaded, processing, processed, error
+    metadata     Json?    // Processing results, extracted text, etc.
+    tags         String[] @default([])
+    isDeleted    Boolean  @default(false)
+    
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    
+    @@map("files")
+}
+
+// LLM configurations and API keys
+model LLMConfiguration {
+    id          String   @id @default(cuid())
+    userId      String
+    provider    String   // 'openai', 'anthropic', 'deepseek', 'gemini'
+    model       String
+    apiKey      String   // Encrypted
+    isDefault   Boolean  @default(false)
+    parameters  Json?    // Temperature, max_tokens, etc.
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    isActive    Boolean  @default(true)
+    
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    
+    @@unique([userId, provider, model])
+    @@map("llm_configurations")
+}
+
+// Search results caching for DeepSearch
+model SearchResult {
+    id        String   @id @default(cuid())
+    query     String
+    results   Json     // Array of search results with sources
+    sources   Json     // Array of credible sources used
+    createdAt DateTime @default(now())
+    expiresAt DateTime
+    metadata  Json?    // Search parameters, filters, etc.
+    
+    @@index([query])
+    @@index([createdAt])
+    @@map("search_results")
+}
+
+// Code execution history
+model CodeExecution {
+    id          String   @id @default(cuid())
+    userId      String
+    language    String   @default("python")
+    code        String
+    output      String?
+    error       String?
+    status      String   // 'running', 'completed', 'error', 'timeout'
+    executedAt  DateTime @default(now())
+    duration    Int?     // Execution time in milliseconds
+    metadata    Json?
+    
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    
+    @@map("code_executions")
+}
+
+// Plugin/Tool configurations
+model ToolConfiguration {
+    id          String   @id @default(cuid())
+    name        String
+    type        String   // 'builtin', 'plugin', 'extension'
+    version     String   @default("1.0.0")
+    config      Json     // Tool-specific configuration
+    isEnabled   Boolean  @default(true)
+    isGlobal    Boolean  @default(true) // If false, user-specific
+    userId      String?  // For user-specific tools
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    
+    @@unique([name, version])
+    @@map("tool_configurations")
+}
+
+// Voice interactions
+model VoiceInteraction {
+    id            String   @id @default(cuid())
+    userId        String?
+    audioUrl      String?  // Path to audio file
+    transcript    String?
+    response      String?
+    language      String   @default("en")
+    duration      Int?     // Audio duration in seconds
+    createdAt     DateTime @default(now())
+    status        String   @default("processing") // processing, completed, error
+    
+    @@map("voice_interactions")
+}
+
+// System logs and analytics
+model SystemLog {
+    id        String   @id @default(cuid())
+    level     String   // 'info', 'warn', 'error', 'debug'
+    message   String
+    component String   // Component that generated the log
+    userId    String?
+    metadata  Json?
+    createdAt DateTime @default(now())
+    
+    @@index([level])
+    @@index([component])
+    @@index([createdAt])
+    @@map("system_logs")
+}
